@@ -8,7 +8,11 @@ const dates = [
   { iso:"2026-09-11", day:"Fr", date:"11. Sep" }, { iso:"2026-09-12", day:"Sa", date:"12. Sep" },
   { iso:"2026-09-13", day:"So", date:"13. Sep" },
 ];
-const slots = ["16:00","17:00","18:00","19:00","20:00","21:00","22:00"];
+const slots = ["11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00","21:00","22:00","23:00","00:00","01:00"];
+
+function endTime(start: string) {
+  return `${String((Number(start.slice(0, 2)) + 1) % 24).padStart(2, "0")}:00`;
+}
 
 export default function BookingPage() {
   const [step,setStep] = useState(1);
@@ -46,7 +50,7 @@ export default function BookingPage() {
 
         {step===3 && <form className="booking-step" onSubmit={submit}><button type="button" className="back" onClick={()=>setStep(2)}>← Zurück</button><p className="eyebrow">SCHRITT 3</p><h2>Fast geschafft.</h2><label className="text-field">Name<input required value={name} onChange={(e)=>setName(e.target.value)} placeholder="Vor- und Nachname"/></label><label className="text-field">E-Mail<input required type="email" value={email} onChange={(e)=>setEmail(e.target.value)} placeholder="du@beispiel.ch"/></label><label className="text-field">Telefon<input required type="tel" value={phone} onChange={(e)=>setPhone(e.target.value)} placeholder="+41 79 000 00 00"/></label><label className="check-field"><input type="checkbox" checked={accepted} onChange={(e)=>setAccepted(e.target.checked)}/><span>Ich akzeptiere die Buchungsbedingungen und Datenschutzhinweise.</span></label><div className="selection-summary"><span>{date.day}, {date.date} · {time}<small>{people} Personen · 60 Minuten</small></span><strong>CHF {price.toFixed(2)}</strong></div><button className="booking-next" disabled={!accepted}>Kostenpflichtig buchen</button></form>}
 
-        {step===4 && <div className="booking-step confirmation"><div className="confirmation-ball">✓</div><p className="eyebrow">BUCHUNG BESTÄTIGT</p><h2>Bis bald, {name.split(" ")[0]}!</h2><p>Dein Tisch ist reserviert. Die Bestätigung ist unterwegs an <strong>{email}</strong>.</p><div className="ticket"><span>{date.day}, {date.date}</span><strong>{time}–{String(Number(time.slice(0,2))+1).padStart(2,"0")}:00</strong><small>Tisch wird beim Check-in zugeteilt · {people} Personen</small><div><span>Buchung</span><strong>{reference}</strong><span>Check-in PIN</span><strong>{String(Math.floor(1000+Math.random()*8999))}</strong></div></div><Link className="booking-next" href="/">Zur Tagesübersicht</Link></div>}
+        {step===4 && <div className="booking-step confirmation"><div className="confirmation-ball">✓</div><p className="eyebrow">BUCHUNG BESTÄTIGT</p><h2>Bis bald, {name.split(" ")[0]}!</h2><p>Dein Tisch ist reserviert. Die Bestätigung ist unterwegs an <strong>{email}</strong>.</p><div className="ticket"><span>{date.day}, {date.date}</span><strong>{time}–{endTime(time)}</strong><small>Tisch wird beim Check-in zugeteilt · {people} Personen</small><div><span>Buchung</span><strong>{reference}</strong><span>Check-in PIN</span><strong>{String(Math.floor(1000+Math.random()*8999))}</strong></div></div><Link className="booking-next" href="/">Zur Tagesübersicht</Link></div>}
       </div>
     </section>
   </main>;
