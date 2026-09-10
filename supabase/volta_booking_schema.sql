@@ -126,6 +126,46 @@ begin
  if (select count(*) from public.vp_allocations a where a.booking_id=bid)<s.required_tables then raise exception 'Dieser Slot wurde gerade vergeben. Bitte neu wählen.'; end if;
  return query select bid,ref,pin,stat,total;
 end; $$;
+
+-- Time-first public checkout: customers choose a time and any number of the
+-- available tables. Pricing is calculated per occupied hour and table.
+create or replace function public.vp_create_simple_booking(
+  p_date date,p_time time,p_hours smallint,p_tables smallint,p_people smallint,
+  p_name text,p_email text,p_phone text,p_company text default null,p_notes text default null,
+  p_addons text[] default '{}',p_website text default ''
+)
+returns table(booking_id uuid,reference text,pin_code text,status public.vp_booking_status,price_cents integer)
+language plpgsql security definer set search_path='' as $$
+declare
+  st timestamptz; en timestamptz; bid uuid:=gen_random_uuid();
+  ref text:='VP-'||upper(substr(replace(gen_random_uuid()::text,'-',''),1,6));
+  pin text:=lpad((floor(random()*9000)+1000)::int::text,4,'0');
+  rid smallint; allocated smallint:=0; total integer;
+begin
+  if coalesce(p_website,'')<>'' then raise exception 'Ungültige Anfrage'; end if;
+  if p_hours not between 1 and 3 or p_tables not between 1 and 8 then raise exception 'Ungültige Dauer oder Tischanzahl'; end if;
+  if p_people not between 1 and p_tables*8 then raise exception 'Bitte passende Personenzahl angeben'; end if;
+  if p_date<current_date or p_date>current_date+120 or p_time<time '09:00' or extract(hour from p_time)+p_hours>24 then raise exception 'Zeitpunkt nicht buchbar'; end if;
+  if length(trim(p_name))<2 or p_email !~* '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' or length(trim(p_phone))<7 then raise exception 'Bitte vollständige Kontaktdaten angeben'; end if;
+  st:=(p_date+p_time) at time zone 'Europe/Zurich'; en:=st+(p_hours||' hours')::interval;
+  if st<=now() then raise exception 'Diese Startzeit ist bereits vorbei'; end if;
+  select sum(case when p_time+(h||' hours')::interval>=time '16:00' then 2200 else 1800 end)*p_tables
+    +coalesce((select sum(a.price_cents) from public.vp_addons a where a.active and a.id=any(coalesce(p_addons,'{}'))),0)
+    into total from generate_series(0,p_hours-1) h;
+  insert into public.vp_bookings(id,reference,service_id,starts_at,ends_at,guest_count,customer_name,customer_email,customer_phone,company,notes,status,price_cents,pin_code,addon_ids)
+  values(bid,ref,'single-flex',st,en,p_people,trim(p_name),lower(trim(p_email)),trim(p_phone),nullif(trim(p_company),''),nullif(trim(p_notes),''),'confirmed',total,pin,p_addons);
+  for rid in select r.id from public.vp_resources r where r.active
+    and not exists(select 1 from public.vp_allocations a where a.resource_id=r.id and a.active and a.occupied&&tstzrange(st,en,'[)'))
+    and not exists(select 1 from public.vp_blocks b where (b.resource_id is null or b.resource_id=r.id) and tstzrange(b.starts_at,b.ends_at,'[)')&&tstzrange(st,en,'[)'))
+    order by r.id limit p_tables
+  loop
+    insert into public.vp_allocations(booking_id,resource_id,occupied) values(bid,rid,tstzrange(st,en,'[)'));
+    allocated:=allocated+1;
+  end loop;
+  if allocated<p_tables then raise exception 'Diese Auswahl wurde gerade vergeben. Bitte neu wählen.'; end if;
+  return query select bid,ref,pin,'confirmed'::public.vp_booking_status,total;
+end; $$;
+
 create or replace function public.vp_admin_bookings(p_pin text,p_from date,p_to date)
 returns table(id uuid,reference text,service_id text,starts_at timestamptz,ends_at timestamptz,guest_count smallint,customer_name text,customer_email text,customer_phone text,company text,notes text,status public.vp_booking_status,payment_status text,price_cents integer,pin_code text,table_ids smallint[])
 language plpgsql security definer set search_path='' as $$ begin
@@ -142,5 +182,6 @@ end; $$;
 revoke execute on function public.vp_price(text,time,smallint,text[]) from public,anon,authenticated;
 revoke execute on function public.vp_available_slots(date,text,smallint) from public; grant execute on function public.vp_available_slots(date,text,smallint) to anon,authenticated;
 revoke execute on function public.vp_create_booking(text,date,time,smallint,smallint,text,text,text,text,text,text[],text) from public; grant execute on function public.vp_create_booking(text,date,time,smallint,smallint,text,text,text,text,text,text[],text) to anon,authenticated;
+revoke execute on function public.vp_create_simple_booking(date,time,smallint,smallint,smallint,text,text,text,text,text,text[],text) from public,anon,authenticated; grant execute on function public.vp_create_simple_booking(date,time,smallint,smallint,smallint,text,text,text,text,text,text[],text) to anon;
 revoke execute on function public.vp_admin_bookings(text,date,date) from public; grant execute on function public.vp_admin_bookings(text,date,date) to anon,authenticated;
 revoke execute on function public.vp_admin_update_booking(text,uuid,public.vp_booking_status,text) from public; grant execute on function public.vp_admin_update_booking(text,uuid,public.vp_booking_status,text) to anon,authenticated;
