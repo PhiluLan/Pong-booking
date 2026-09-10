@@ -1,57 +1,37 @@
 "use client";
-
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { Addon, Service, Slot, dateLabel, isoDate, money } from "@/lib/volta";
 
-const dates = [
-  { iso:"2026-09-09", day:"Mi", date:"9. Sep" }, { iso:"2026-09-10", day:"Do", date:"10. Sep" },
-  { iso:"2026-09-11", day:"Fr", date:"11. Sep" }, { iso:"2026-09-12", day:"Sa", date:"12. Sep" },
-  { iso:"2026-09-13", day:"So", date:"13. Sep" },
-];
-const slots = ["11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00","21:00","22:00","23:00","00:00","01:00"];
+type Confirmation={reference:string;pin_code:string;status:string;price_cents:number|null};
+const days=Array.from({length:14},(_,i)=>{const d=new Date();d.setDate(d.getDate()+i);return isoDate(d)});
 
-function endTime(start: string) {
-  return `${String((Number(start.slice(0, 2)) + 1) % 24).padStart(2, "0")}:00`;
-}
-
-export default function BookingPage() {
-  const [step,setStep] = useState(1);
-  const [date,setDate] = useState(dates[0]);
-  const [time,setTime] = useState("18:00");
-  const [people,setPeople] = useState(4);
-  const [name,setName] = useState("");
-  const [email,setEmail] = useState("");
-  const [phone,setPhone] = useState("");
-  const [accepted,setAccepted] = useState(false);
-  const [reference,setReference] = useState("");
-  const price = useMemo(() => people * (people <= 5 ? 7.5 : 6), [people]);
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    const ref = `VP-${Math.floor(2000 + Math.random()*7000)}`;
-    const saved = JSON.parse(window.localStorage.getItem("volta-pong-demo-bookings") || "[]");
-    saved.unshift({ id:ref, start:time, table:2, name, people, status:"Bestätigt", source:"Online", date:date.iso });
-    window.localStorage.setItem("volta-pong-demo-bookings", JSON.stringify(saved));
-    setReference(ref); setStep(4);
-  }
-
-  return <main className="booking-page">
-    <header className="booking-header"><Link href="/" className="booking-brand">VOLTA <span>PONG!</span></Link><div><span>Basel · St. Johann</span><Link href="/">Admin</Link></div></header>
-    <div className="booking-balls" aria-hidden="true"><i/><i/><i/></div>
-    <section className="booking-layout">
-      <div className="booking-intro"><p className="eyebrow">TISCH RESERVIEREN</p><h1>Dein Tisch.<br/>Deine Runde.</h1><p>Wähle deine Spielzeit, schnapp dir deine Leute und leg los. Schläger und Bälle stehen bereit.</p><div className="booking-facts"><span><strong>60 Min.</strong> pro Buchung</span><span><strong>CHF {people <= 5 ? "7.50" : "6.00"}</strong> pro Person</span><span><strong>1–9</strong> Personen</span></div></div>
-
-      <div className="booking-card">
-        {step < 4 && <div className="steps" aria-label={`Schritt ${step} von 3`}><span className={step>=1?"done":""}/><span className={step>=2?"done":""}/><span className={step>=3?"done":""}/><small>{step}/3</small></div>}
-
-        {step===1 && <div className="booking-step"><p className="eyebrow">SCHRITT 1</p><h2>Wann wollt ihr spielen?</h2><label className="field-label">Datum</label><div className="date-options">{dates.map((item)=><button key={item.iso} className={date.iso===item.iso?"selected":""} onClick={()=>setDate(item)}><small>{item.day}</small><strong>{item.date}</strong></button>)}</div><label className="field-label">Startzeit</label><div className="time-options">{slots.map((slot)=><button key={slot} className={time===slot?"selected":""} onClick={()=>setTime(slot)}>{slot}<small>{["19:00","20:00"].includes(slot)?"2 frei":"frei"}</small></button>)}</div><button className="booking-next" onClick={()=>setStep(2)}>Weiter</button></div>}
-
-        {step===2 && <div className="booking-step"><button className="back" onClick={()=>setStep(1)}>← Zurück</button><p className="eyebrow">SCHRITT 2</p><h2>Wie gross ist eure Runde?</h2><div className="people-picker"><button onClick={()=>setPeople(Math.max(1,people-1))} aria-label="Eine Person weniger">−</button><div><strong>{people}</strong><span>Personen</span></div><button onClick={()=>setPeople(Math.min(9,people+1))} aria-label="Eine Person mehr">+</button></div><div className="group-note"><span>10+ Personen?</span><p>Für grössere Gruppen stellen wir euch ein passendes Package zusammen.</p><a href="mailto:hallo@voltapong.ch">Gruppenanfrage senden</a></div><div className="selection-summary"><span>{date.day}, {date.date} · {time}</span><strong>CHF {price.toFixed(2)}</strong></div><button className="booking-next" onClick={()=>setStep(3)}>Weiter</button></div>}
-
-        {step===3 && <form className="booking-step" onSubmit={submit}><button type="button" className="back" onClick={()=>setStep(2)}>← Zurück</button><p className="eyebrow">SCHRITT 3</p><h2>Fast geschafft.</h2><label className="text-field">Name<input required value={name} onChange={(e)=>setName(e.target.value)} placeholder="Vor- und Nachname"/></label><label className="text-field">E-Mail<input required type="email" value={email} onChange={(e)=>setEmail(e.target.value)} placeholder="du@beispiel.ch"/></label><label className="text-field">Telefon<input required type="tel" value={phone} onChange={(e)=>setPhone(e.target.value)} placeholder="+41 79 000 00 00"/></label><label className="check-field"><input type="checkbox" checked={accepted} onChange={(e)=>setAccepted(e.target.checked)}/><span>Ich akzeptiere die Buchungsbedingungen und Datenschutzhinweise.</span></label><div className="selection-summary"><span>{date.day}, {date.date} · {time}<small>{people} Personen · 60 Minuten</small></span><strong>CHF {price.toFixed(2)}</strong></div><button className="booking-next" disabled={!accepted}>Kostenpflichtig buchen</button></form>}
-
-        {step===4 && <div className="booking-step confirmation"><div className="confirmation-ball">✓</div><p className="eyebrow">BUCHUNG BESTÄTIGT</p><h2>Bis bald, {name.split(" ")[0]}!</h2><p>Dein Tisch ist reserviert. Die Bestätigung ist unterwegs an <strong>{email}</strong>.</p><div className="ticket"><span>{date.day}, {date.date}</span><strong>{time}–{endTime(time)}</strong><small>Tisch wird beim Check-in zugeteilt · {people} Personen</small><div><span>Buchung</span><strong>{reference}</strong><span>Check-in PIN</span><strong>{String(Math.floor(1000+Math.random()*8999))}</strong></div></div><Link className="booking-next" href="/">Zur Tagesübersicht</Link></div>}
-      </div>
-    </section>
-  </main>;
+export default function BookingPage(){
+ const [services,setServices]=useState<Service[]>([]),[addons,setAddons]=useState<Addon[]>([]),[serviceId,setServiceId]=useState("");
+ const [date,setDate]=useState(days[0]),[hours,setHours]=useState(1),[people,setPeople]=useState(2),[slots,setSlots]=useState<Slot[]>([]),[time,setTime]=useState("");
+ const [selectedAddons,setSelectedAddons]=useState<string[]>([]),[step,setStep]=useState(1),[loading,setLoading]=useState(true),[error,setError]=useState("");
+ const [name,setName]=useState(""),[email,setEmail]=useState(""),[phone,setPhone]=useState(""),[company,setCompany]=useState(""),[notes,setNotes]=useState(""),[accepted,setAccepted]=useState(false),[confirmation,setConfirmation]=useState<Confirmation|null>(null);
+ const service=services.find(s=>s.id===serviceId)!;
+ useEffect(()=>{(async()=>{const [{data:s,error:se},{data:a,error:ae}]=await Promise.all([supabase.from("vp_services").select("*").order("sort_order"),supabase.from("vp_addons").select("*").order("sort_order")]);if(se||ae)setError("Buchungsdaten konnten nicht geladen werden.");else{setServices(s||[]);setAddons(a||[]);setServiceId(s?.[0]?.id||"")}setLoading(false)})()},[]);
+ useEffect(()=>{if(!serviceId)return;(async()=>{setTime("");const {data,error:e}=await supabase.rpc("vp_available_slots",{p_date:date,p_service:serviceId,p_hours:hours});if(e)setError("Verfügbarkeit konnte nicht geladen werden.");else setSlots(data||[])})()},[date,hours,serviceId]);
+ // Selecting a package intentionally resets its dependent fields.
+ // eslint-disable-next-line react-hooks/set-state-in-effect
+ useEffect(()=>{if(!service)return;setHours(service.min_duration_hours);setPeople(service.min_people)},[serviceId,service]);
+ const price=useMemo(()=>{if(!service||service.billing==="request")return null;const base=service.billing==="fixed"?service.price_cents!:(time>="16:00"&&service.late_price_cents?service.late_price_cents:service.price_cents!)*hours;return base+addons.filter(a=>selectedAddons.includes(a.id)).reduce((n,a)=>n+a.price_cents,0)},[service,time,hours,addons,selectedAddons]);
+ const toggleAddon=(id:string)=>setSelectedAddons(x=>x.includes(id)?x.filter(v=>v!==id):[...x,id]);
+ async function submit(e:FormEvent){e.preventDefault();if(!service||!time)return;setLoading(true);setError("");const {data,error:err}=await supabase.rpc("vp_create_booking",{p_service:service.id,p_date:date,p_time:time,p_hours:hours,p_people:people,p_name:name,p_email:email,p_phone:phone,p_company:company,p_notes:notes,p_addons:selectedAddons,p_website:""});setLoading(false);if(err){setError(err.message.includes("gerade")?"Der Slot wurde soeben vergeben. Bitte wähle eine andere Zeit.":err.message);setStep(2);return}setConfirmation(data?.[0]);setStep(4)}
+ if(loading&&!services.length)return <main className="booking-page center-state"><div className="loader"/><p>Volta Pong wird geladen …</p></main>;
+ return <main className="booking-page">
+  <header className="booking-header"><Link href="/buchen" className="booking-brand">VOLTA <span>PONG!</span></Link><div><span>Voltastrasse 30 · Basel</span><Link href="/">Team-Ansicht</Link></div></header>
+  <div className="booking-balls" aria-hidden="true"><i/><i/><i/></div>
+  <section className="booking-layout"><div className="booking-intro"><p className="eyebrow">RESERVIEREN</p><h1>Spielzeit.<br/>Ohne Umweg.</h1><p>Wähle das passende Paket. Wir zeigen dir live, wie viele der acht Tische noch frei sind. Schläger und Bälle sind inklusive.</p><div className="booking-facts"><span><strong>09–00 Uhr</strong> täglich</span><span><strong>8 Tische</strong> Nord & Süd</span><span><strong>bis 12 h</strong> kostenlos stornieren*</span></div></div>
+   <div className="booking-card">
+    {step<4&&<div className="steps"><span className={step>=1?"done":""}/><span className={step>=2?"done":""}/><span className={step>=3?"done":""}/><small>{step}/3</small></div>}{error&&<div className="form-error">{error}</div>}
+    {step===1&&<div className="booking-step"><p className="eyebrow">SCHRITT 1</p><h2>Was habt ihr vor?</h2><div className="service-options">{services.map(s=><button key={s.id} className={serviceId===s.id?"selected":""} onClick={()=>setServiceId(s.id)}><span><strong>{s.short_name}</strong><small>{s.name}</small></span><b>{s.billing==="request"?"Anfrage":s.billing==="fixed"?money(s.price_cents):`ab ${money(s.price_cents)} / h`}</b></button>)}</div>{service&&<div className="service-detail"><p>{service.description}</p><span>{service.required_tables} {service.required_tables===1?"Tisch":"Tische"} · {service.min_duration_hours}–{service.max_duration_hours} Std. · {service.min_people}{service.max_people?`–${service.max_people}`:"+"} Personen</span></div>}<button className="booking-next" onClick={()=>setStep(2)}>Termin wählen</button></div>}
+    {step===2&&service&&<div className="booking-step"><button className="back" onClick={()=>setStep(1)}>← Paket ändern</button><p className="eyebrow">SCHRITT 2</p><h2>Wann spielt ihr?</h2><label className="field-label">Datum</label><div className="date-options">{days.map(d=><button key={d} className={date===d?"selected":""} onClick={()=>setDate(d)}>{dateLabel(d)}</button>)}</div><label className="field-label">Dauer</label><div className="duration-options">{Array.from({length:service.max_duration_hours-service.min_duration_hours+1},(_,i)=>service.min_duration_hours+i).map(h=><button key={h} className={hours===h?"selected":""} onClick={()=>setHours(h)}>{h} Std.</button>)}</div><label className="field-label">Startzeit</label><div className="time-options">{slots.map(s=><button key={s.start_time} className={time===s.start_time.slice(0,5)?"selected":""} onClick={()=>setTime(s.start_time.slice(0,5))}>{s.start_time.slice(0,5)}<small>{s.available_tables} frei</small></button>)}</div>{!slots.length&&<p className="empty-message">Für diese Auswahl ist kein passender Slot mehr frei.</p>}<button className="booking-next" disabled={!time} onClick={()=>setStep(3)}>Weiter</button></div>}
+    {step===3&&service&&<form className="booking-step" onSubmit={submit}><button type="button" className="back" onClick={()=>setStep(2)}>← Termin ändern</button><p className="eyebrow">SCHRITT 3</p><h2>Wer kommt?</h2><div className="people-inline"><label>Personen<input type="number" min={service.min_people} max={service.max_people||80} value={people} onChange={e=>setPeople(Number(e.target.value))}/></label><label>Firma / Team<input value={company} onChange={e=>setCompany(e.target.value)}/></label></div><label className="text-field">Name<input required minLength={2} value={name} onChange={e=>setName(e.target.value)}/></label><label className="text-field">E-Mail<input required type="email" value={email} onChange={e=>setEmail(e.target.value)}/></label><label className="text-field">Telefon<input required type="tel" minLength={7} value={phone} onChange={e=>setPhone(e.target.value)}/></label>{addons.length>0&&<><label className="field-label">Essen & Extras</label><div className="addon-options">{addons.map(a=><label key={a.id}><input type="checkbox" checked={selectedAddons.includes(a.id)} onChange={()=>toggleAddon(a.id)}/><span>{a.name}</span><b>{a.price_cents?money(a.price_cents):"inkl."}</b></label>)}</div></>}<label className="text-field">Notiz (optional)<textarea value={notes} onChange={e=>setNotes(e.target.value)}/></label><label className="check-field"><input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)}/><span>Ich akzeptiere die Buchungs- und Stornobedingungen. Kostenlose Stornierung bis 24 Stunden, danach 25 %, ab 12 Stunden 100 %.</span></label><div className="selection-summary"><span>{dateLabel(date)} · {time}<small>{service.short_name} · {hours} Std. · {people} Personen</small></span><strong>{money(price)}</strong></div><button className="booking-next" disabled={!accepted||loading}>{loading?"Wird reserviert …":service.billing==="request"?"Anfrage senden":"Verbindlich reservieren"}</button><p className="payment-note">Zahlungsstatus wird erfasst. Die Online-Zahlung wird im nächsten Schritt mit eurem Zahlungsanbieter verbunden.</p></form>}
+    {step===4&&confirmation&&<div className="booking-step confirmation"><div className="confirmation-ball">✓</div><p className="eyebrow">{confirmation.status==="request"?"ANFRAGE EINGEGANGEN":"RESERVIERUNG BESTÄTIGT"}</p><h2>Bis bald, {name.split(" ")[0]}!</h2><p>{confirmation.status==="request"?"Wir prüfen eure Gruppenanfrage und melden uns persönlich.":"Deine Spielzeit ist live im Volta-Pong-Kalender reserviert."}</p><div className="ticket"><span>{dateLabel(date)}</span><strong>{time} · {hours} Std.</strong><small>{service.short_name} · {people} Personen</small><div><span>Buchung</span><strong>{confirmation.reference}</strong><span>Check-in-PIN</span><strong>{confirmation.pin_code}</strong><span>Preis</span><strong>{money(confirmation.price_cents)}</strong></div></div><button className="booking-next" onClick={()=>location.reload()}>Weitere Buchung</button></div>}
+   </div></section>
+ </main>
 }
