@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { cors, db, getSumupCheckout, json, merchantCode } from "../_shared/sumup.ts";
+import { provisionAnnyBooking, refreshAnnyAccess } from "../_shared/anny.ts";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors(req) });
@@ -16,6 +17,16 @@ Deno.serve(async (req: Request) => {
         p_checkout_id: checkout.id, p_provider_status: checkout.status,
         p_event_key: `status-${checkout.id}-${checkout.status}`, p_payload: checkout,
       });
+      result = await db.rpc("vp_sumup_payment_result", { p_booking_id: booking_id, p_status_token: status_token });
+      payment = result.data?.[0];
+    }
+    if (payment?.payment_status === "paid") {
+      try {
+        await provisionAnnyBooking(booking_id);
+        await refreshAnnyAccess(booking_id);
+      } catch {
+        // The customer-facing status response remains available; the DB records the fulfillment error.
+      }
       result = await db.rpc("vp_sumup_payment_result", { p_booking_id: booking_id, p_status_token: status_token });
       payment = result.data?.[0];
     }

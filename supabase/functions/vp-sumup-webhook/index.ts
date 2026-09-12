@@ -1,5 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { db, getSumupCheckout, json, merchantCode } from "../_shared/sumup.ts";
+import { provisionAnnyBooking } from "../_shared/anny.ts";
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json(req, { error: "Methode nicht erlaubt" }, 405);
@@ -16,6 +18,15 @@ Deno.serve(async (req: Request) => {
       p_event_key: `${event.event_type}-${checkout.id}-${checkout.status}`, p_payload: checkout,
     });
     if (error) throw new Error(error.message);
+    if (String(checkout.status).toUpperCase() === "PAID") {
+      const { data: booking } = await db.from("vp_bookings").select("id").eq("payment_checkout_id", checkout.id).maybeSingle();
+      if (booking?.id) {
+        const task = provisionAnnyBooking(booking.id).catch(() => undefined);
+        const edgeRuntime = (globalThis as any).EdgeRuntime;
+        if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(task);
+        else await task;
+      }
+    }
     return new Response(null, { status: 204 });
   } catch (error) {
     return json(req, { error: error instanceof Error ? error.message : "Webhook fehlgeschlagen" }, 400);

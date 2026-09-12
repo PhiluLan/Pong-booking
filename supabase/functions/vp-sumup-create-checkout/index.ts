@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { cors, db, json, merchantCode, sumupKey } from "../_shared/sumup.ts";
+import { assertAnnyAvailability } from "../_shared/anny.ts";
 
 const siteUrl = "https://volta-pong-buchungen.philipplanger.chatgpt.site";
 
@@ -8,6 +9,7 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json(req, { error: "Methode nicht erlaubt" }, 405);
   try {
     const body = await req.json();
+    await assertAnnyAvailability(body.date, body.time, Number(body.hours), Number(body.tables));
     const statusToken = `${crypto.randomUUID()}${crypto.randomUUID()}`;
     const { data, error } = await db.rpc("vp_create_sumup_hold", {
       p_date: body.date, p_time: body.time, p_hours: body.hours, p_tables: body.tables,
