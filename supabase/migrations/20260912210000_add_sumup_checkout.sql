@@ -58,19 +58,23 @@ declare
   st timestamptz; en timestamptz; bid uuid:=gen_random_uuid();
   ref text:='VP-'||upper(substr(replace(gen_random_uuid()::text,'-',''),1,6));
   rid smallint; allocated smallint:=0; total integer; expiry timestamptz:=now()+interval '30 minutes';
+  cfg jsonb; opens time; closes time; cutoff time; horizon int; max_hours int; day_price int; evening_price int;
 begin
   perform public.vp_release_expired_payment_holds();
+  select studio_config into cfg from public.vp_settings where id=true;
+  opens:=(cfg#>>'{operations,opensAt}')::time; closes:=(cfg#>>'{operations,closesAt}')::time; cutoff:=(cfg#>>'{operations,eveningStartsAt}')::time;
+  horizon:=(cfg#>>'{operations,horizonDays}')::int; max_hours:=(cfg#>>'{operations,maxDurationHours}')::int; day_price:=(cfg#>>'{operations,morningPriceCents}')::int; evening_price:=(cfg#>>'{operations,eveningPriceCents}')::int;
   if coalesce(p_website,'')<>'' or p_status_token is null or length(p_status_token)<32 then raise exception 'Ungültige Anfrage'; end if;
-  if p_hours not between 1 and 3 or p_tables not between 1 and 8 then raise exception 'Ungültige Dauer oder Tischanzahl'; end if;
+  if p_hours not between 1 and max_hours or p_tables not between 1 and 8 then raise exception 'Ungültige Dauer oder Tischanzahl'; end if;
   if p_people not between 1 and p_tables*8 then raise exception 'Bitte passende Personenzahl angeben'; end if;
-  if p_date<current_date or p_date>current_date+120 or p_time<time '09:00' or extract(hour from p_time)+p_hours>24 then raise exception 'Zeitpunkt nicht buchbar'; end if;
+  if p_date<current_date or p_date>current_date+horizon or p_time<opens or (closes=time '00:00' and extract(hour from p_time)+p_hours>24) or (closes<>time '00:00' and p_time+(p_hours||' hours')::interval>closes) then raise exception 'Zeitpunkt nicht buchbar'; end if;
   if length(trim(p_name))<2 or p_email !~* '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' or length(trim(p_phone))<7 then raise exception 'Bitte vollständige Kontaktdaten angeben'; end if;
   if (select count(*) from public.vp_bookings where lower(customer_email)=lower(trim(p_email)) and payment_status='pending' and created_at>now()-interval '30 minutes')>=3 then
     raise exception 'Zu viele offene Zahlungsvorgänge. Bitte später erneut versuchen.';
   end if;
   st:=(p_date+p_time) at time zone 'Europe/Zurich'; en:=st+(p_hours||' hours')::interval;
   if st<=now() then raise exception 'Diese Startzeit ist bereits vorbei'; end if;
-  select sum(case when p_time+(h||' hours')::interval>=time '16:00' then 2200 else 1800 end)*p_tables
+  select sum(case when p_time+(h||' hours')::interval>=cutoff then evening_price else day_price end)*p_tables
     +coalesce((select sum(a.price_cents) from public.vp_addons a where a.active and a.id=any(coalesce(p_addons,'{}'))),0)
     into total from generate_series(0,p_hours-1) h;
   insert into public.vp_bookings(
