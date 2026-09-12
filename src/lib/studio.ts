@@ -48,7 +48,7 @@ export const defaultStudioConfig: StudioConfig = {
     headline: "Wann wollt ihr spielen?",
     benefits: ["Schläger & Bälle inklusive", "Tisch wird automatisch zugeteilt"],
     termsLabel: "Ich akzeptiere die Buchungs- und Stornobedingungen.",
-    paymentNote: "Sicher mit SumUp bezahlen. Dein Tisch bleibt während des Checkouts 30 Minuten reserviert.",
+    paymentNote: "Sicherer SumUp-Testcheckout · Es wird kein echtes Geld belastet. Dein Tisch bleibt 30 Minuten reserviert.",
   },
   design: {
     primary: "#144e94",
