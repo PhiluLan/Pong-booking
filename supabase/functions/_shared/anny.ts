@@ -9,6 +9,12 @@ const org = () => Deno.env.get("ANNY_ORG_ID")!;
 const resource = () => Deno.env.get("ANNY_RESOURCE_ID")!;
 const service = () => Deno.env.get("ANNY_SERVICE_ID")!;
 
+async function isAnnyEnabled() {
+  const { data, error } = await db.from("vp_settings").select("anny_enabled").eq("id", true).single();
+  if (error) throw error;
+  return Boolean(data.anny_enabled);
+}
+
 async function anny(path: string, init: RequestInit = {}) {
   const response = await fetch(`${API}${path}${path.includes("?") ? "&" : "?"}o=${encodeURIComponent(org())}`, {
     ...init,
@@ -104,6 +110,7 @@ function safeProviderPayload(value: unknown) {
 }
 
 export async function refreshAnnyAccess(bookingId: string) {
+  if (!await isAnnyEnabled()) return;
   const { data: booking } = await db.from("vp_bookings").select(
     "id,starts_at,ends_at,anny_booking_id,anny_customer_account_id,access_status"
   ).eq("id", bookingId).maybeSingle();
@@ -175,8 +182,9 @@ async function createPaidExternalOrder(remoteBookingId: string, customerId: stri
 }
 
 export async function provisionAnnyBooking(bookingId: string) {
+  if (!await isAnnyEnabled()) return;
   const { data: existing } = await db.from("vp_bookings").select("anny_booking_id,payment_status").eq("id", bookingId).maybeSingle();
-  if (!existing || existing.payment_status !== "paid") return;
+  if (!existing || !["paid", "invoice"].includes(existing.payment_status)) return;
   if (existing.anny_booking_id) {
     await refreshAnnyAccess(bookingId);
     return;
@@ -212,7 +220,9 @@ export async function provisionAnnyBooking(bookingId: string) {
             blocker_end_date: booking.ends_at,
             external_uuid: String(booking.id),
             skip_notification: false,
-            note: `Über das Volta-Portal bezahlt CHF ${(booking.price_cents / 100).toFixed(2)}. ${booking.discount_code ? `Rabattcode ${booking.discount_code}. ` : ""}${booking.notes || ""}${addons}`,
+            note: existing.payment_status === "paid"
+              ? `Über das Volta-Portal bezahlt CHF ${(booking.price_cents / 100).toFixed(2)}. ${booking.discount_code ? `Rabattcode ${booking.discount_code}. ` : ""}${booking.notes || ""}${addons}`
+              : `Über das Volta-Portal gebucht · Zahlung separat/offen CHF ${(booking.price_cents / 100).toFixed(2)}. ${booking.discount_code ? `Rabattcode ${booking.discount_code}. ` : ""}${booking.notes || ""}${addons}`,
             customer_note: `Buchung über volta-pong.ch · ${booking.reference}`,
           },
           relationships: {
@@ -234,12 +244,14 @@ export async function provisionAnnyBooking(bookingId: string) {
       body: JSON.stringify({ customer_id: customer.id }),
     });
     let remoteOrderId = "";
-    try {
-      // The SumUp charge is already verified. The completed Anny order groups the
-      // operational booking and enables Anny's own confirmation-mail workflow.
-      remoteOrderId = await createPaidExternalOrder(remoteBookingId, customer.id);
-    } catch {
-      // Access provisioning is more important than the optional Anny order shell.
+    if (existing.payment_status === "paid") {
+      try {
+        // The SumUp charge is already verified. The completed Anny order groups the
+        // operational booking and enables Anny's own confirmation-mail workflow.
+        remoteOrderId = await createPaidExternalOrder(remoteBookingId, customer.id);
+      } catch {
+        // Access provisioning is more important than the optional Anny order shell.
+      }
     }
     await db.rpc("vp_complete_anny_fulfillment", {
       p_booking_id: bookingId,

@@ -14,6 +14,8 @@ export type StudioConfig = {
     vatEnabled: boolean;
     vatRateBasisPoints: number;
     vatNumber: string;
+    annyEnabled: boolean;
+    sumupEnabled: boolean;
   };
   content: {
     eyebrow: string;
@@ -48,6 +50,8 @@ export const defaultStudioConfig: StudioConfig = {
     vatEnabled: true,
     vatRateBasisPoints: 810,
     vatNumber: "",
+    annyEnabled: true,
+    sumupEnabled: true,
   },
   content: {
     eyebrow: "Tisch buchen",

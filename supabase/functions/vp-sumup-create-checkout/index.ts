@@ -16,7 +16,12 @@ Deno.serve(async (req: Request) => {
       if (error || !data?.[0]) throw new Error(error?.message || "Dieser Rabattcode ist nicht gültig");
       return json(req, data[0]);
     }
-    await assertAnnyAvailability(body.date, body.time, Number(body.hours), Number(body.tables));
+    const { data: settings, error: settingsError } = await db.from("vp_settings")
+      .select("anny_enabled,sumup_enabled").eq("id", true).single();
+    if (settingsError) throw settingsError;
+    if (settings.anny_enabled) {
+      await assertAnnyAvailability(body.date, body.time, Number(body.hours), Number(body.tables));
+    }
     const statusToken = `${crypto.randomUUID()}${crypto.randomUUID()}`;
     const { data, error } = await db.rpc("vp_create_sumup_hold", {
       p_date: body.date, p_time: body.time, p_hours: body.hours, p_tables: body.tables,
@@ -29,7 +34,23 @@ Deno.serve(async (req: Request) => {
     const paymentReference = `SUMUP-${hold.reference}-${Date.now()}`;
     const statusQuery = new URLSearchParams({ payment_booking: hold.booking_id, payment_token: statusToken });
     if (Number(hold.price_cents) === 0) {
-      try { await provisionAnnyBooking(hold.booking_id); } catch { /* The status endpoint retries fulfillment. */ }
+      if (settings.anny_enabled) {
+        try { await provisionAnnyBooking(hold.booking_id); } catch { /* The status endpoint retries fulfillment. */ }
+      }
+      return json(req, {
+        checkout_url: `${siteUrl}/buchen?${statusQuery.toString()}`,
+        booking_id: hold.booking_id, reference: hold.reference,
+        status_token: statusToken, expires_at: null,
+      });
+    }
+    if (!settings.sumup_enabled) {
+      const { error: finalizeError } = await db.rpc("vp_finalize_without_sumup", {
+        p_booking_id: hold.booking_id, p_status_token: statusToken,
+      });
+      if (finalizeError) throw finalizeError;
+      if (settings.anny_enabled) {
+        try { await provisionAnnyBooking(hold.booking_id); } catch { /* The status endpoint retries fulfillment. */ }
+      }
       return json(req, {
         checkout_url: `${siteUrl}/buchen?${statusQuery.toString()}`,
         booking_id: hold.booking_id, reference: hold.reference,

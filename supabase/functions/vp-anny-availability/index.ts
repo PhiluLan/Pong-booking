@@ -25,7 +25,17 @@ Deno.serve(async (req: Request) => {
     const { date, hours } = await req.json();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number(hours) < 1 || Number(hours) > 24) throw new Error("Ungültige Zeitauswahl");
     const { data: service, error: serviceError } = await db.from("vp_services").select("anny_id,slot_interval_minutes,min_notice_minutes,active").eq("id", "single-flex").single();
-    if (serviceError || !service?.active || !service.anny_id) throw new Error("Die Online-Buchungsoption ist nicht vollständig mit Anny verbunden");
+    if (serviceError || !service?.active) throw new Error("Die Online-Buchungsoption ist deaktiviert");
+    const { data: settings, error: settingsError } = await db.from("vp_settings").select("anny_enabled").eq("id", true).single();
+    if (settingsError) throw settingsError;
+    if (!settings.anny_enabled) {
+      const { data: localSlots, error: localError } = await db.rpc("vp_available_slots", {
+        p_date: date, p_service: "single-flex", p_hours: Number(hours),
+      });
+      if (localError) throw localError;
+      return new Response(JSON.stringify(localSlots || []), { headers: headers(req) });
+    }
+    if (!service.anny_id) throw new Error("Die Online-Buchungsoption ist nicht vollständig mit Anny verbunden");
     const params = new URLSearchParams({
       service_id: String(service.anny_id),
       resource_id: Deno.env.get("ANNY_RESOURCE_ID") || "181227",

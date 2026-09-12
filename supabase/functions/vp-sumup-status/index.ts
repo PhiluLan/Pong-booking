@@ -20,7 +20,7 @@ Deno.serve(async (req: Request) => {
       result = await db.rpc("vp_sumup_payment_result", { p_booking_id: booking_id, p_status_token: status_token });
       payment = result.data?.[0];
     }
-    if (payment?.payment_status === "paid") {
+    if (payment?.payment_status === "paid" || payment?.payment_status === "invoice") {
       try {
         await provisionAnnyBooking(booking_id);
         await refreshAnnyAccess(booking_id);
@@ -30,7 +30,8 @@ Deno.serve(async (req: Request) => {
       result = await db.rpc("vp_sumup_payment_result", { p_booking_id: booking_id, p_status_token: status_token });
       payment = result.data?.[0];
     }
-    return json(req, payment);
+    const { data: settings } = await db.from("vp_settings").select("anny_enabled,sumup_enabled").eq("id", true).single();
+    return json(req, { ...payment, anny_enabled: settings?.anny_enabled ?? true, sumup_enabled: settings?.sumup_enabled ?? true });
   } catch (error) {
     return json(req, { error: error instanceof Error ? error.message : "Statusprüfung fehlgeschlagen" }, 400);
   }
