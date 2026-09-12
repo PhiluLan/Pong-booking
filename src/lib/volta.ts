@@ -3,7 +3,7 @@ export type Service = {
   min_duration_hours:number; max_duration_hours:number; required_tables:number; available_from:string;
   price_cents:number|null; late_price_cents:number|null; billing:"hourly"|"fixed"|"request"; sort_order:number;
 };
-export type Addon = { id:string; name:string; price_cents:number; sort_order:number };
+export type Addon = { id:string; name:string; price_cents:number; sort_order:number; image_url:string };
 export type Slot = { start_time:string; available_tables:number };
 export type Booking = {
   id:string; reference:string; service_id:string; starts_at:string; ends_at:string; guest_count:number;
