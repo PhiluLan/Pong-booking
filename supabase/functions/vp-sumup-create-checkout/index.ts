@@ -31,6 +31,12 @@ Deno.serve(async (req: Request) => {
     });
     if (error || !data?.[0]) throw new Error(error?.message || "Reservierung konnte nicht gehalten werden");
     const hold = data[0];
+    if (Number(hold.price_cents) > 0 && settings.sumup_enabled) {
+      const { data: storedHold, error: storedHoldError } = await db.from("vp_bookings")
+        .select("payment_expires_at").eq("id", hold.booking_id).single();
+      if (storedHoldError || !storedHold?.payment_expires_at) throw new Error("Zahlungsfrist konnte nicht gesetzt werden");
+      hold.expires_at = storedHold.payment_expires_at;
+    }
     const paymentReference = `SUMUP-${hold.reference}-${Date.now()}`;
     const statusQuery = new URLSearchParams({ payment_booking: hold.booking_id, payment_token: statusToken });
     if (Number(hold.price_cents) === 0) {

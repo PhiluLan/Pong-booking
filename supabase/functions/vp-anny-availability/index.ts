@@ -24,6 +24,7 @@ Deno.serve(async (req: Request) => {
   try {
     const { date, hours } = await req.json();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number(hours) < 1 || Number(hours) > 24) throw new Error("Ungültige Zeitauswahl");
+    await db.rpc("vp_release_expired_payment_holds");
     const { data: service, error: serviceError } = await db.from("vp_services").select("anny_id,slot_interval_minutes,min_notice_minutes,active").eq("id", "single-flex").single();
     if (serviceError || !service?.active) throw new Error("Die Online-Buchungsoption ist deaktiviert");
     const { data: settings, error: settingsError } = await db.from("vp_settings").select("anny_enabled").eq("id", true).single();
