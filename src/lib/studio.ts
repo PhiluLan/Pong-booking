@@ -11,6 +11,9 @@ export type StudioConfig = {
     morningPriceCents: number;
     eveningPriceCents: number;
     eveningStartsAt: string;
+    vatEnabled: boolean;
+    vatRateBasisPoints: number;
+    vatNumber: string;
   };
   content: {
     eyebrow: string;
@@ -42,6 +45,9 @@ export const defaultStudioConfig: StudioConfig = {
     morningPriceCents: 1800,
     eveningPriceCents: 2200,
     eveningStartsAt: "16:00",
+    vatEnabled: true,
+    vatRateBasisPoints: 810,
+    vatNumber: "",
   },
   content: {
     eyebrow: "Tisch buchen",
