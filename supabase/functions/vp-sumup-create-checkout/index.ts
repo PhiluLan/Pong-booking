@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { cors, db, json, merchantCode, sumupKey } from "../_shared/sumup.ts";
-import { assertAnnyAvailability } from "../_shared/anny.ts";
+import { assertAnnyAvailability, provisionAnnyBooking } from "../_shared/anny.ts";
 
 const siteUrl = "https://volta-pong-buchungen.philipplanger.chatgpt.site";
 
@@ -9,18 +9,33 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json(req, { error: "Methode nicht erlaubt" }, 405);
   try {
     const body = await req.json();
+    if (body.action === "validate_discount") {
+      const { data, error } = await db.rpc("vp_discount_quote", {
+        p_code: String(body.code || ""), p_subtotal: Number(body.subtotal),
+      });
+      if (error || !data?.[0]) throw new Error(error?.message || "Dieser Rabattcode ist nicht gültig");
+      return json(req, data[0]);
+    }
     await assertAnnyAvailability(body.date, body.time, Number(body.hours), Number(body.tables));
     const statusToken = `${crypto.randomUUID()}${crypto.randomUUID()}`;
     const { data, error } = await db.rpc("vp_create_sumup_hold", {
       p_date: body.date, p_time: body.time, p_hours: body.hours, p_tables: body.tables,
       p_people: body.people, p_name: body.name, p_email: body.email, p_phone: body.phone,
       p_company: body.company || null, p_notes: body.notes || null, p_addons: body.addons || [],
-      p_website: body.website || "", p_status_token: statusToken,
+      p_website: body.website || "", p_status_token: statusToken, p_discount_code: body.discount_code || null,
     });
     if (error || !data?.[0]) throw new Error(error?.message || "Reservierung konnte nicht gehalten werden");
     const hold = data[0];
     const paymentReference = `SUMUP-${hold.reference}-${Date.now()}`;
     const statusQuery = new URLSearchParams({ payment_booking: hold.booking_id, payment_token: statusToken });
+    if (Number(hold.price_cents) === 0) {
+      try { await provisionAnnyBooking(hold.booking_id); } catch { /* The status endpoint retries fulfillment. */ }
+      return json(req, {
+        checkout_url: `${siteUrl}/buchen?${statusQuery.toString()}`,
+        booking_id: hold.booking_id, reference: hold.reference,
+        status_token: statusToken, expires_at: null,
+      });
+    }
     const webhookUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/vp-sumup-webhook`;
     const checkoutResponse = await fetch("https://api.sumup.com/v0.1/checkouts", {
       method: "POST",

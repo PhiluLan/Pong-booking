@@ -212,7 +212,7 @@ export async function provisionAnnyBooking(bookingId: string) {
             blocker_end_date: booking.ends_at,
             external_uuid: String(booking.id),
             skip_notification: false,
-            note: `Extern via SumUp bezahlt CHF ${(booking.price_cents / 100).toFixed(2)}. ${booking.notes || ""}${addons}`,
+            note: `Über das Volta-Portal bezahlt CHF ${(booking.price_cents / 100).toFixed(2)}. ${booking.discount_code ? `Rabattcode ${booking.discount_code}. ` : ""}${booking.notes || ""}${addons}`,
             customer_note: `Buchung über volta-pong.ch · ${booking.reference}`,
           },
           relationships: {
