@@ -43,7 +43,7 @@ export const defaultStudioConfig: StudioConfig = {
     opensAt: "09:00",
     closesAt: "00:00",
     horizonDays: 120,
-    maxDurationHours: 3,
+    maxDurationHours: 6,
     morningPriceCents: 1800,
     eveningPriceCents: 2200,
     eveningStartsAt: "16:00",
@@ -105,7 +105,7 @@ export function mergeStudioConfig(raw: unknown): StudioConfig {
 
 export const studioBlockLabels: Record<StudioBlockId, { title: string; hint: string }> = {
   intro: { title: "Einstieg", hint: "Kicker und grosse Überschrift" },
-  steps: { title: "Ablauf", hint: "Vier Schritte der Buchung" },
+  steps: { title: "Ablauf", hint: "Sechs Schritte der Buchung" },
   benefits: { title: "Vorteile", hint: "Kurze Vertrauensargumente" },
   tariffs: { title: "Preisübersicht", hint: "Vormittags- und Abendtarif" },
 };
