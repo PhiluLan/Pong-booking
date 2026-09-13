@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { cors, db, json, merchantCode, sumupKey } from "../_shared/sumup.ts";
 import { assertAnnyAvailability, provisionAnnyBooking } from "../_shared/anny.ts";
 
-const siteUrl = "https://volta-pong-buchungen.philipplanger.chatgpt.site";
+const siteUrl = (Deno.env.get("SITE_URL") || "https://nuknuk.ch").replace(/\/$/, "");
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors(req) });

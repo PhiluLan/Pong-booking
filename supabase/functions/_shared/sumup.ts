@@ -1,6 +1,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 export const allowedOrigins = new Set([
+  "https://nuknuk.ch",
+  "https://pong-booking.vercel.app",
   "https://volta-pong-buchungen.philipplanger.chatgpt.site",
   "http://localhost:3000",
 ]);
@@ -8,7 +10,7 @@ export const allowedOrigins = new Set([
 export function cors(req: Request) {
   const origin = req.headers.get("origin") || "";
   return {
-    "Access-Control-Allow-Origin": allowedOrigins.has(origin) ? origin : "https://volta-pong-buchungen.philipplanger.chatgpt.site",
+    "Access-Control-Allow-Origin": allowedOrigins.has(origin) ? origin : "https://nuknuk.ch",
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Content-Type": "application/json",
