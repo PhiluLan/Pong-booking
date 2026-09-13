@@ -277,3 +277,30 @@ export async function provisionAnnyBooking(bookingId: string) {
     throw error;
   }
 }
+
+export async function cancelAnnyBooking(bookingId: string) {
+  if (!await isAnnyEnabled()) return;
+  const { data: booking, error } = await db.from("vp_bookings").select("anny_booking_id").eq("id", bookingId).maybeSingle();
+  if (error) throw error;
+  if (!booking?.anny_booking_id) return;
+  await anny(`/bookings/${encodeURIComponent(booking.anny_booking_id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ data: { type: "bookings", id: String(booking.anny_booking_id), attributes: { status: "cancelled" } } }),
+  });
+}
+
+export async function rescheduleAnnyBooking(bookingId: string) {
+  if (!await isAnnyEnabled()) return;
+  const { data: booking, error } = await db.from("vp_bookings").select("anny_booking_id,starts_at,ends_at").eq("id", bookingId).maybeSingle();
+  if (error) throw error;
+  if (!booking?.anny_booking_id) return;
+  await anny(`/bookings/${encodeURIComponent(booking.anny_booking_id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ data: { type: "bookings", id: String(booking.anny_booking_id), attributes: {
+      start_date: booking.starts_at, end_date: booking.ends_at,
+      blocker_start_date: booking.starts_at, blocker_end_date: booking.ends_at,
+    } } }),
+  });
+  await requestSmartlockAccess(bookingId, String(booking.anny_booking_id), booking.starts_at, booking.ends_at);
+  await refreshAnnyAccess(bookingId);
+}

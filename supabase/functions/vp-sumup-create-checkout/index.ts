@@ -31,6 +31,20 @@ Deno.serve(async (req: Request) => {
     });
     if (error || !data?.[0]) throw new Error(error?.message || "Reservierung konnte nicht gehalten werden");
     const hold = data[0];
+    const bearer = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+    if (bearer) {
+      const auth = await db.auth.getUser(bearer);
+      if (auth.data.user && String(auth.data.user.email || "").toLowerCase() === String(body.email || "").toLowerCase()) {
+        let organizationId: string | null = null;
+        if (body.organization_id) {
+          const { data: membership } = await db.from("vp_organization_members").select("organization_id")
+            .eq("organization_id", body.organization_id).eq("user_id", auth.data.user.id).eq("active", true).maybeSingle();
+          if (!membership) throw new Error("Dieses Firmenkonto ist nicht mit deinem Login verbunden");
+          organizationId = membership.organization_id;
+        }
+        await db.from("vp_bookings").update({ user_id: auth.data.user.id, organization_id: organizationId }).eq("id", hold.booking_id);
+      }
+    }
     if (Number(hold.price_cents) > 0 && settings.sumup_enabled) {
       const { data: storedHold, error: storedHoldError } = await db.from("vp_bookings")
         .select("payment_expires_at").eq("id", hold.booking_id).single();
