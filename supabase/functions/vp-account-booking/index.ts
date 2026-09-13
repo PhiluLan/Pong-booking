@@ -121,6 +121,55 @@ Deno.serve(async (req: Request) => {
       return json(req, row);
     }
 
+    if (body.action === "buy_loyalty_product") {
+      const statusToken = `${crypto.randomUUID()}${crypto.randomUUID()}`;
+      const { data, error } = await db.rpc("vp_prepare_loyalty_order", {
+        p_user_id: user.id, p_product_id: String(body.product_id || ""), p_status_token: statusToken,
+      });
+      if (error || !data?.[0]) throw new Error(error?.message || "Produkt konnte nicht bestellt werden");
+      const order = data[0];
+      const params = new URLSearchParams({ loyalty_order: order.order_id, loyalty_token: statusToken });
+      if (Number(order.amount_cents) === 0) return json(req, { checkout_url: `${siteUrl}/konto?${params}`, paid: true });
+      const { data: settings } = await db.from("vp_settings").select("sumup_enabled").eq("id", true).single();
+      if (!settings?.sumup_enabled) {
+        const checkoutId = `manual-loyalty-${order.order_id}`;
+        await db.rpc("vp_attach_loyalty_checkout", { p_order_id: order.order_id, p_checkout_id: checkoutId, p_payload: { mode: "manual" } });
+        await db.rpc("vp_reconcile_loyalty_order", { p_checkout_id: checkoutId, p_provider_status: "PAID", p_payload: { mode: "manual" } });
+        return json(req, { checkout_url: `${siteUrl}/konto?${params}`, paid: true });
+      }
+      const response = await fetch("https://api.sumup.com/v0.1/checkouts", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${sumupKey()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          checkout_reference: `SUMUP-LOYALTY-${String(order.order_id).slice(0, 8)}-${Date.now()}`,
+          amount: Number((Number(order.amount_cents) / 100).toFixed(2)), currency: "CHF",
+          merchant_code: merchantCode(), description: "Volta Pong · Pass oder Mitgliedschaft",
+          return_url: `${Deno.env.get("SUPABASE_URL")}/functions/v1/vp-sumup-webhook`,
+          redirect_url: `${siteUrl}/konto?${params}`, valid_until: order.expires_at,
+          hosted_checkout: { enabled: true },
+        }),
+      });
+      const checkout = await response.json();
+      if (!response.ok || !checkout.id || !checkout.hosted_checkout_url) throw new Error(checkout?.message || "Zahlung konnte nicht gestartet werden");
+      const attached = await db.rpc("vp_attach_loyalty_checkout", { p_order_id: order.order_id, p_checkout_id: checkout.id, p_payload: checkout });
+      if (attached.error) throw attached.error;
+      return json(req, { checkout_url: checkout.hosted_checkout_url, paid: false });
+    }
+
+    if (body.action === "loyalty_status") {
+      let result = await db.rpc("vp_loyalty_order_result", { p_user_id: user.id, p_order_id: body.order_id, p_status_token: body.status_token });
+      if (result.error || !result.data?.[0]) throw new Error("Bestellung nicht gefunden");
+      let row = result.data[0];
+      if (row.status === "pending" && row.checkout_id && !String(row.checkout_id).startsWith("manual-")) {
+        const response = await fetch(`https://api.sumup.com/v0.1/checkouts/${encodeURIComponent(row.checkout_id)}`, { headers: { Authorization: `Bearer ${sumupKey()}` } });
+        const checkout = await response.json();
+        if (response.ok) await db.rpc("vp_reconcile_loyalty_order", { p_checkout_id: row.checkout_id, p_provider_status: checkout.status, p_payload: checkout });
+        result = await db.rpc("vp_loyalty_order_result", { p_user_id: user.id, p_order_id: body.order_id, p_status_token: body.status_token });
+        row = result.data?.[0] || row;
+      }
+      return json(req, row);
+    }
+
     return json(req, { error: "Unbekannte Aktion" }, 400);
   } catch (error) {
     return json(req, { error: error instanceof Error ? error.message : "Aktion fehlgeschlagen" }, 400);

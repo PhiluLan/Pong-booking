@@ -58,6 +58,9 @@ type Snapshot = {
   organizations: Organization[];
   staff: null | { role: string; members: Member[]; invitations: Invitation[] };
 };
+type LoyaltyProduct = { id:string;name:string;description:string;kind:"multi_pass"|"membership";price_cents:number;credits:number;validity_days:number;discount_basis_points:number;benefits:string[];featured:boolean };
+type Entitlement = { id:string;product_id:string;product_name:string;kind:"multi_pass"|"membership";credits_total:number;credits_remaining:number;valid_from:string;valid_until:string;status:string;discount_basis_points:number;benefits:string[] };
+type LoyaltySnapshot = { products:LoyaltyProduct[];entitlements:Entitlement[];credit_balance:number;membership:null|{id:string;product_name:string;valid_until:string;discount_basis_points:number;benefits:string[]};community:{display_name:string;bio:string;discoverable:boolean;joined_at:string|null};orders:{id:string;product_name:string;amount_cents:number;status:string;created_at:string}[] };
 const roleName: Record<string, string> = {
   owner: "Eigentümer",
   admin: "Admin",
@@ -81,6 +84,7 @@ const initialSnapshot: Snapshot = {
   organizations: [],
   staff: null,
 };
+const initialLoyalty: LoyaltySnapshot = {products:[],entitlements:[],credit_balance:0,membership:null,community:{display_name:"",bio:"",discoverable:false,joined_at:null},orders:[]};
 
 export default function AccountPage() {
   const [session, setSession] = useState<Session | null>(null),
@@ -88,11 +92,12 @@ export default function AccountPage() {
     [email, setEmail] = useState(""),
     [mailSent, setMailSent] = useState(false);
   const [snapshot, setSnapshot] = useState<Snapshot>(initialSnapshot),
+    [loyalty, setLoyalty] = useState<LoyaltySnapshot>(initialLoyalty),
     [addons, setAddons] = useState<Addon[]>([]),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
     [error, setError] = useState("");
-  const [tab, setTab] = useState<"bookings" | "profile" | "companies" | "team">(
+  const [tab, setTab] = useState<"bookings" | "passes" | "profile" | "companies" | "team">(
       "bookings",
     ),
     [expanded, setExpanded] = useState<string | null>(null),
@@ -116,6 +121,7 @@ export default function AccountPage() {
   const [extraQuantities, setExtraQuantities] = useState<
     Record<string, number>
   >({});
+  const [communityName,setCommunityName]=useState(""),[communityBio,setCommunityBio]=useState(""),[communityVisible,setCommunityVisible]=useState(false);
 
   async function loadAccount(current: Session) {
     setBusy(true);
@@ -126,7 +132,7 @@ export default function AccountPage() {
       setBusy(false);
       return;
     }
-    const [{ data: snapshotData, error: snapshotError }, { data: addonData }] =
+    const [{ data: snapshotData, error: snapshotError }, { data: addonData }, {data:loyaltyData,error:loyaltyError}] =
       await Promise.all([
         supabase.rpc("vp_account_snapshot"),
         supabase
@@ -134,18 +140,24 @@ export default function AccountPage() {
           .select("*")
           .eq("active", true)
           .order("sort_order"),
+        supabase.rpc("vp_loyalty_snapshot"),
       ]);
-    if (snapshotError) {
-      setError(snapshotError.message);
+    if (snapshotError || loyaltyError) {
+      setError(snapshotError?.message || loyaltyError?.message || "Konto konnte nicht geladen werden");
       setBusy(false);
       return;
     }
     const next = (snapshotData || initialSnapshot) as Snapshot;
     setSnapshot(next);
+    const nextLoyalty=(loyaltyData||initialLoyalty) as LoyaltySnapshot;
+    setLoyalty(nextLoyalty);
     setAddons(addonData || []);
     setFirstName(next.profile.first_name || "");
     setLastName(next.profile.last_name || "");
     setPhone(next.profile.phone || "");
+    setCommunityName(nextLoyalty.community.display_name||next.profile.first_name||"");
+    setCommunityBio(nextLoyalty.community.bio||"");
+    setCommunityVisible(Boolean(nextLoyalty.community.discoverable));
     if (!selectedOrg && next.organizations[0])
       setSelectedOrg(next.organizations[0].id);
     setSession(current);
@@ -167,7 +179,7 @@ export default function AccountPage() {
         if (!mounted) return;
         setSession(next);
         if (next) void loadAccount(next);
-        else setSnapshot(initialSnapshot);
+        else {setSnapshot(initialSnapshot);setLoyalty(initialLoyalty)}
       },
     );
     return () => {
@@ -175,13 +187,19 @@ export default function AccountPage() {
       listener.subscription.unsubscribe();
     };
   }, []);
-  // Process a returned SumUp add-on payment whenever a signed-in session becomes available.
+  // Process returned SumUp payments whenever a signed-in session becomes available.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!session) return;
     const q = new URLSearchParams(location.search),
       order = q.get("addon_order"),
-      token = q.get("addon_token");
+      token = q.get("addon_token"),
+      loyaltyOrder=q.get("loyalty_order"),
+      loyaltyToken=q.get("loyalty_token");
+    if(loyaltyOrder&&loyaltyToken){
+      void accountAction({action:"loyalty_status",order_id:loyaltyOrder,status_token:loyaltyToken},false).then(result=>{if(result?.status==="paid"){setMessage("Dein Pass ist aktiv und kann sofort verwendet werden.");history.replaceState({},"","/konto");void loadAccount(session)}else if(result?.status)setMessage("Zahlungsstatus: "+result.status)});
+      return;
+    }
     if (!order || !token) return;
     void accountAction(
       { action: "addon_status", order_id: order, status_token: token },
@@ -223,6 +241,8 @@ export default function AccountPage() {
     if (e2) setError(e2.message);
     else setMailSent(true);
   }
+  async function buyProduct(productId:string){const result=await accountAction({action:"buy_loyalty_product",product_id:productId},false);if(result?.checkout_url)location.assign(result.checkout_url)}
+  async function saveCommunity(e:FormEvent){e.preventDefault();setBusy(true);setError("");const {error:e2}=await supabase.rpc("vp_update_community_profile",{p_display_name:communityName,p_bio:communityBio,p_discoverable:communityVisible});if(e2)setError(e2.message);else{setMessage("Community-Profil gespeichert.");if(session)await loadAccount(session)}setBusy(false)}
   async function accountAction(
     payload: Record<string, unknown>,
     reload = true,
@@ -492,6 +512,12 @@ export default function AccountPage() {
               onClick={() => setTab("bookings")}
             >
               Buchungen <b>{upcoming.length}</b>
+            </button>
+            <button
+              className={tab === "passes" ? "active" : ""}
+              onClick={() => setTab("passes")}
+            >
+              Pässe & Club <b>{loyalty.credit_balance}</b>
             </button>
             <button
               className={tab === "profile" ? "active" : ""}
@@ -829,6 +855,34 @@ export default function AccountPage() {
                   </div>
                 )}
               </div>
+            </>
+          )}
+          {tab === "passes" && (
+            <>
+              <div className="account-title">
+                <div><p className="eyebrow">MEHRFACHKARTEN & COMMUNITY</p><h2>Mehr spielen.</h2></div>
+              </div>
+              <div className="loyalty-overview">
+                <article><span>Dein Guthaben</span><strong>{loyalty.credit_balance}</strong><small>Tischstunden verfügbar</small></article>
+                <article className={loyalty.membership?"active":""}><span>Mitgliedschaft</span><strong>{loyalty.membership?loyalty.membership.product_name:"Noch keine"}</strong><small>{loyalty.membership?`gültig bis ${new Intl.DateTimeFormat("de-CH").format(new Date(loyalty.membership.valid_until))}`:"Community-Vorteile freischalten"}</small></article>
+              </div>
+              <section className="loyalty-products">
+                {loyalty.products.map((p)=><article key={p.id} className={p.featured?"featured":""}>
+                  {p.featured&&<em>Empfohlen</em>}<p>{p.kind==="multi_pass"?`${p.credits} Tischstunden`:"Mitgliedschaft"}</p><h3>{p.name}</h3><span>{p.description}</span>
+                  <ul>{p.benefits.map(x=><li key={x}>✓ {x}</li>)}</ul>
+                  <div><strong>{money(p.price_cents)}</strong><button disabled={busy} onClick={()=>void buyProduct(p.id)}>Jetzt kaufen</button></div>
+                </article>)}
+              </section>
+              <section className="community-card">
+                <div><p className="eyebrow">VOLTA COMMUNITY</p><h3>Dein Clubprofil</h3><p>Du entscheidest selbst, ob dein Name später in Community-Funktionen sichtbar sein darf.</p></div>
+                <form onSubmit={saveCommunity}>
+                  <label>Anzeigename<input maxLength={80} value={communityName} onChange={e=>setCommunityName(e.target.value)}/></label>
+                  <label>Über dich <small>optional</small><textarea maxLength={280} rows={3} value={communityBio} onChange={e=>setCommunityBio(e.target.value)}/></label>
+                  <label className="community-consent"><input type="checkbox" checked={communityVisible} disabled={!loyalty.membership} onChange={e=>setCommunityVisible(e.target.checked)}/><span>Mein Profil darf für andere Community-Mitglieder sichtbar sein.</span></label>
+                  <button disabled={busy}>Community-Profil speichern</button>
+                </form>
+              </section>
+              {loyalty.entitlements.length>0&&<section className="pass-history"><h3>Deine aktiven und bisherigen Pässe</h3>{loyalty.entitlements.map(e=><div key={e.id}><span><strong>{e.product_name}</strong><small>bis {new Intl.DateTimeFormat("de-CH").format(new Date(e.valid_until))}</small></span><b>{e.kind==="multi_pass"?`${e.credits_remaining} / ${e.credits_total} Stunden`:e.status==="active"?"Aktiv":e.status}</b></div>)}</section>}
             </>
           )}
           {tab === "profile" && (

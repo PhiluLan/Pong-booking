@@ -26,6 +26,14 @@ type DiscountQuote = {
   total_cents: number;
 };
 type BookingOrganization = { id: string; name: string; role: string };
+type BookingLoyalty = {
+  credit_balance: number;
+  membership: null | {
+    product_name: string;
+    discount_basis_points: number;
+    valid_until: string | null;
+  };
+};
 type Mode = "welcome" | "booking" | "group";
 const progress = [
   ["Datum", "Spieltag wählen"],
@@ -84,7 +92,12 @@ export default function BookingPage() {
     [notes, setNotes] = useState(""),
     [accepted, setAccepted] = useState(false);
   const [organizations, setOrganizations] = useState<BookingOrganization[]>([]),
-    [organizationId, setOrganizationId] = useState("");
+    [organizationId, setOrganizationId] = useState(""),
+    [loyalty, setLoyalty] = useState<BookingLoyalty>({
+      credit_balance: 0,
+      membership: null,
+    }),
+    [useCredits, setUseCredits] = useState(false);
   const [discountCode, setDiscountCode] = useState(""),
     [discount, setDiscount] = useState<DiscountQuote | null>(null),
     [discountBusy, setDiscountBusy] = useState(false),
@@ -148,8 +161,21 @@ export default function BookingPage() {
         ),
       [config.operations.maxDurationHours],
     ),
-    subtotal = time ? basePrice(time, hours, tables, config) + extrasPrice : 0,
-    total = discount?.total_cents ?? subtotal;
+    tablePrice = time ? basePrice(time, hours, tables, config) : 0,
+    subtotal = tablePrice + extrasPrice,
+    promoTotal = discount?.total_cents ?? subtotal,
+    creditCost = hours * tables,
+    creditsApplied = useCredits && loyalty.credit_balance >= creditCost,
+    membershipDiscount =
+      !creditsApplied && loyalty.membership
+        ? Math.round(
+            Math.max(0, promoTotal - extrasPrice) *
+              (loyalty.membership.discount_basis_points / 10000),
+          )
+        : 0,
+    total = creditsApplied
+      ? extrasPrice
+      : Math.max(0, promoTotal - membershipDiscount);
   const vatCents = config.operations.vatEnabled
       ? Math.round(
           (total * config.operations.vatRateBasisPoints) /
@@ -179,7 +205,10 @@ export default function BookingPage() {
     supabase.auth.getSession().then(async ({ data }) => {
       if (!data.session) return;
       await supabase.rpc("vp_claim_account");
-      const { data: account } = await supabase.rpc("vp_account_snapshot");
+      const [{ data: account }, { data: loyaltyData }] = await Promise.all([
+        supabase.rpc("vp_account_snapshot"),
+        supabase.rpc("vp_loyalty_snapshot"),
+      ]);
       const profile = account?.profile;
       if (!profile) return;
       setFirstName((v) => v || profile.first_name || "");
@@ -187,6 +216,11 @@ export default function BookingPage() {
       setEmail((v) => v || profile.email || "");
       setPhone((v) => v || profile.phone || "");
       setOrganizations(account?.organizations || []);
+      if (loyaltyData)
+        setLoyalty({
+          credit_balance: Number(loyaltyData.credit_balance || 0),
+          membership: loyaltyData.membership || null,
+        });
     });
   }, []);
   useEffect(() => {
@@ -367,6 +401,7 @@ export default function BookingPage() {
               notes,
               addons: selectedAddonIds,
               discount_code: discount?.code || "",
+              use_credits: creditsApplied,
               website: "",
             }),
           },
@@ -1034,13 +1069,61 @@ export default function BookingPage() {
                   <strong>{money(total)}</strong>
                 </div>
               </div>
+              {(loyalty.credit_balance > 0 || loyalty.membership) && (
+                <div className="booking-benefits">
+                  {loyalty.credit_balance > 0 && (
+                    <label
+                      className={`credit-choice ${creditsApplied ? "selected" : ""}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={creditsApplied}
+                        disabled={loyalty.credit_balance < creditCost}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setUseCredits(checked);
+                          if (checked) {
+                            setDiscount(null);
+                            setDiscountCode("");
+                            setDiscountError("");
+                          }
+                        }}
+                      />
+                      <span>
+                        <strong>Mehrfachkarte einsetzen</strong>
+                        <small>
+                          {creditCost} Tischstunde{creditCost === 1 ? "" : "n"}
+                          {" · "}{loyalty.credit_balance} verfügbar
+                        </small>
+                      </span>
+                      <b>{creditsApplied ? "Aktiv" : "Auswählen"}</b>
+                    </label>
+                  )}
+                  {loyalty.credit_balance > 0 &&
+                    loyalty.credit_balance < creditCost && (
+                      <p className="benefit-note">
+                        Für diese Buchung fehlen dir {creditCost - loyalty.credit_balance}{" "}
+                        Tischstunden.
+                      </p>
+                    )}
+                  {loyalty.membership && !creditsApplied && (
+                    <div className="member-benefit">
+                      <span>Community-Vorteil</span>
+                      <strong>
+                        {loyalty.membership.product_name} · {loyalty.membership.discount_basis_points / 100} %
+                      </strong>
+                      <small>Der Mitgliederrabatt wird automatisch abgezogen.</small>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="discount-entry">
                 <div>
                   <label>
                     Rabattcode <small>optional</small>
                     <input
                       value={discountCode}
-                      disabled={Boolean(discount)}
+                      disabled={Boolean(discount) || creditsApplied}
                       onChange={(e) =>
                         setDiscountCode(e.target.value.toUpperCase())
                       }
@@ -1048,7 +1131,7 @@ export default function BookingPage() {
                   </label>
                   <button
                     type="button"
-                    disabled={discountBusy}
+                    disabled={discountBusy || creditsApplied}
                     onClick={applyDiscount}
                   >
                     {discountBusy
@@ -1060,6 +1143,11 @@ export default function BookingPage() {
                 </div>
                 {discountError && (
                   <p className="discount-error">{discountError}</p>
+                )}
+                {creditsApplied && (
+                  <p className="benefit-note">
+                    Rabattcodes sind bei Verwendung einer Mehrfachkarte nicht kombinierbar.
+                  </p>
                 )}
                 {discount && (
                   <div className="discount-success">
@@ -1075,6 +1163,17 @@ export default function BookingPage() {
                 {discount && (
                   <span>
                     Rabatt <b>− {money(discount.discount_cents)}</b>
+                  </span>
+                )}
+                {membershipDiscount > 0 && (
+                  <span>
+                    Community-Rabatt <b>− {money(membershipDiscount)}</b>
+                  </span>
+                )}
+                {creditsApplied && (
+                  <span>
+                    Mehrfachkarte ({creditCost} Tischstunden){" "}
+                    <b>− {money(tablePrice)}</b>
                   </span>
                 )}
                 <strong>

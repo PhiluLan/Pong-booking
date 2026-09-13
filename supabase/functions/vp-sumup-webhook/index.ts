@@ -13,6 +13,12 @@ Deno.serve(async (req: Request) => {
     // SumUp webhooks are notifications. The authoritative state is always fetched from SumUp.
     const checkout = await getSumupCheckout(event.id);
     if (checkout.merchant_code !== merchantCode()) return json(req, { error: "Falsches Händlerkonto" }, 403);
+    const { data: loyaltyOrder } = await db.from("vp_loyalty_orders").select("id").eq("checkout_id", checkout.id).maybeSingle();
+    if (loyaltyOrder?.id) {
+      const reconciled = await db.rpc("vp_reconcile_loyalty_order", { p_checkout_id: checkout.id, p_provider_status: checkout.status, p_payload: checkout });
+      if (reconciled.error) throw new Error(reconciled.error.message);
+      return json(req, { ok: true });
+    }
     const { data: addonOrder } = await db.from("vp_booking_addon_orders").select("id").eq("checkout_id", checkout.id).maybeSingle();
     if (addonOrder?.id) {
       const reconciled = await db.rpc("vp_reconcile_account_addon_order", { p_checkout_id: checkout.id, p_provider_status: checkout.status, p_payload: checkout });
