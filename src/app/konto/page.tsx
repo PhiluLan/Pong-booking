@@ -567,8 +567,9 @@ export default function AccountPage() {
                       <span>
                         <b>{b.reference}</b>
                         <small>
-                          {b.table_ids.length}{" "}
-                          {b.table_ids.length === 1 ? "Tisch" : "Tische"} ·{" "}
+                          {b.status === "cancelled"
+                            ? "Tisch freigegeben"
+                            : `${b.table_ids.length} ${b.table_ids.length === 1 ? "Tisch" : "Tische"}`} ·{" "}
                           {b.guest_count} Personen
                         </small>
                       </span>
