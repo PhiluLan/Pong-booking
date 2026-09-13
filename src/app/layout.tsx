@@ -14,9 +14,14 @@ const tricks = localFont({
   display: "swap",
 });
 
+const isTeamApp = process.env.NEXT_PUBLIC_APP_SURFACE === "team";
+
 export const metadata: Metadata = {
-  title: "Volta Pong | Buchungen",
-  description: "Buchungen und Spielbetrieb von Volta Pong verwalten.",
+  title: isTeamApp ? "Volta Pong | Team App" : "Volta Pong | Tisch buchen",
+  description: isTeamApp
+    ? "Geschützter Spielbetrieb von Volta Pong."
+    : "Tisch buchen, Spielzeit verwalten und Teil der Volta Community werden.",
+  robots: isTeamApp ? { index: false, follow: false } : undefined,
 };
 
 export default function RootLayout({

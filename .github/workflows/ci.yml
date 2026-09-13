@@ -36,5 +36,8 @@ jobs:
       - name: Run lint
         run: npm run lint
 
-      - name: Create production build
-        run: npm run build
+      - name: Build customer portal
+        run: npm run build:customer
+
+      - name: Build team app
+        run: npm run build:app

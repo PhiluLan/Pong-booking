@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:customer": "NEXT_PUBLIC_APP_SURFACE=customer next build --webpack",
+    "build:app": "NEXT_PUBLIC_APP_SURFACE=team NEXT_PUBLIC_BOOKING_URL=https://nuknuk.ch/buchen next build --webpack",
     "start": "next start",
     "lint": "eslint"
   },

@@ -1,6 +1,15 @@
 # Volta Pong Buchungssystem
 
-Eigenständiges Buchungsportal für Volta Pong mit dynamischer Preisberechnung, acht automatisch zugeteilten Tischen, Extras, Rabattcodes und Adminbereich.
+Gemeinsame Plattform für das öffentliche Volta-Pong-Buchungsportal und die getrennte interne Team-App.
+
+## Bereiche
+
+- `nuknuk.ch`: öffentlicher Buchungseinstieg
+- `nuknuk.ch/buchen`: direkter Buchungsflow
+- `nuknuk.ch/konto`: Kundenkonto, Buchungen, Pässe und Community
+- `app.nuknuk.ch`: interne Betriebs- und Administrationsoberfläche
+
+Die beiden Domains werden aus demselben Repository als getrennte Vercel-Projekte gebaut. Der öffentliche Build verwendet `NEXT_PUBLIC_APP_SURFACE=customer`, die Team-App `NEXT_PUBLIC_APP_SURFACE=team`. Dadurch bleiben Fachlogik und Design gemeinsam, während Domains und Deployments unabhängig sind.
 
 ## Funktionen
 
@@ -24,6 +33,13 @@ npm run dev
 ```
 
 Die Anwendung ist danach unter [http://localhost:3000](http://localhost:3000) erreichbar.
+
+Beide Produktionsoberflächen lassen sich lokal separat prüfen:
+
+```bash
+npm run build:customer
+npm run build:app
+```
 
 ## Qualitätsprüfung
 
