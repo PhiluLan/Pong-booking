@@ -26,6 +26,7 @@ type Catalog = {
   active_members: number;
   credits_open: number;
 };
+type PaymentSettings = { payment_mode:"live"|"test"|"disabled";email_enabled:boolean;email_from:string;email_reply_to:string };
 
 const blank: Product = {
   id: "",
@@ -48,6 +49,7 @@ export default function MembershipAdmin({ pin }: { pin: string }) {
   const [benefits, setBenefits] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [settings,setSettings]=useState<PaymentSettings>({payment_mode:"live",email_enabled:true,email_from:"Volta Pong <buchung@nuknuk.ch>",email_reply_to:"philipplanger@yahoo.com"});
   const editing = useMemo(
     () => catalog?.products.some((product) => product.id === selected.id),
     [catalog, selected.id],
@@ -55,15 +57,26 @@ export default function MembershipAdmin({ pin }: { pin: string }) {
 
   async function load(preselect?: string) {
     setBusy(true);
-    const { data, error } = await supabase.rpc("vp_admin_loyalty_catalog", {
-      p_pin: pin,
-    });
+    const [{data,error},{data:settingsData,error:settingsError}]=await Promise.all([
+      supabase.rpc("vp_admin_loyalty_catalog",{p_pin:pin}),
+      supabase.rpc("vp_admin_loyalty_payment_settings",{p_pin:pin}),
+    ]);
     setBusy(false);
-    if (error) return setMessage(error.message);
+    if (error||settingsError) return setMessage(error?.message||settingsError?.message||"Einstellungen konnten nicht geladen werden");
     const next = data as Catalog;
     setCatalog(next);
+    setSettings(settingsData as PaymentSettings);
     const chosen = next.products.find((product) => product.id === preselect);
     if (chosen) choose(chosen);
+  }
+
+  async function saveSettings(event:FormEvent){
+    event.preventDefault();setBusy(true);setMessage("");
+    const {data,error}=await supabase.rpc("vp_admin_save_loyalty_payment_settings",{
+      p_pin:pin,p_payment_mode:settings.payment_mode,p_email_enabled:settings.email_enabled,
+      p_email_from:settings.email_from,p_email_reply_to:settings.email_reply_to,
+    });
+    setBusy(false);if(error)return setMessage(error.message);setSettings(data as PaymentSettings);setMessage("Verkauf und E-Mail-Versand wurden gespeichert.");
   }
 
   function choose(product: Product) {
@@ -122,6 +135,13 @@ export default function MembershipAdmin({ pin }: { pin: string }) {
         <article><span>Aktive Mitglieder</span><strong>{catalog.active_members}</strong></article>
         <article><span>Offene Tischstunden</span><strong>{catalog.credits_open}</strong></article>
       </div>
+      <form className="loyalty-operations" onSubmit={saveSettings}>
+        <header><div><span>VERKAUF & KOMMUNIKATION</span><strong>Sicherer Betriebsmodus</strong></div><button disabled={busy}>Einstellungen speichern</button></header>
+        <div className="payment-mode-choice">
+          {([['live','Live','Echte SumUp-Zahlung ist zwingend erforderlich.'],['test','Test','Nur Teamkonten; es wird nichts belastet.'],['disabled','Deaktiviert','Keine neuen Käufe, bestehende Vorteile bleiben aktiv.']] as const).map(([value,label,hint])=><label key={value} className={settings.payment_mode===value?'active':''}><input type="radio" name="payment-mode" value={value} checked={settings.payment_mode===value} onChange={()=>setSettings({...settings,payment_mode:value})}/><span><strong>{label}</strong><small>{hint}</small></span></label>)}
+        </div>
+        <div className="email-settings"><label><input type="checkbox" checked={settings.email_enabled} onChange={event=>setSettings({...settings,email_enabled:event.target.checked})}/><span><strong>Gebrandete Bestätigungen</strong><small>Buchungen, Pässe und Membership-Käufe per E-Mail bestätigen.</small></span></label><label>Absender<input value={settings.email_from} onChange={event=>setSettings({...settings,email_from:event.target.value})}/></label><label>Antwortadresse<input type="email" value={settings.email_reply_to} onChange={event=>setSettings({...settings,email_reply_to:event.target.value})}/></label></div>
+      </form>
       <div className="loyalty-admin-layout">
         <aside className="loyalty-catalog">
           <header>

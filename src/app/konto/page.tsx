@@ -61,6 +61,7 @@ type Snapshot = {
 type LoyaltyProduct = { id:string;name:string;description:string;kind:"multi_pass"|"membership";price_cents:number;credits:number;validity_days:number;discount_basis_points:number;benefits:string[];featured:boolean };
 type Entitlement = { id:string;product_id:string;product_name:string;kind:"multi_pass"|"membership";credits_total:number;credits_remaining:number;valid_from:string;valid_until:string;status:string;discount_basis_points:number;benefits:string[] };
 type LoyaltySnapshot = { products:LoyaltyProduct[];entitlements:Entitlement[];credit_balance:number;membership:null|{id:string;product_name:string;valid_until:string;discount_basis_points:number;benefits:string[]};community:{display_name:string;bio:string;discoverable:boolean;joined_at:string|null};orders:{id:string;product_name:string;amount_cents:number;status:string;created_at:string}[] };
+type CommunityMember = { display_name:string;bio:string;joined_at:string;membership:string };
 const roleName: Record<string, string> = {
   owner: "Eigentümer",
   admin: "Admin",
@@ -122,6 +123,7 @@ export default function AccountPage() {
     Record<string, number>
   >({});
   const [communityName,setCommunityName]=useState(""),[communityBio,setCommunityBio]=useState(""),[communityVisible,setCommunityVisible]=useState(false);
+  const [communityMembers,setCommunityMembers]=useState<CommunityMember[]>([]);
 
   async function loadAccount(current: Session) {
     setBusy(true);
@@ -158,6 +160,10 @@ export default function AccountPage() {
     setCommunityName(nextLoyalty.community.display_name||next.profile.first_name||"");
     setCommunityBio(nextLoyalty.community.bio||"");
     setCommunityVisible(Boolean(nextLoyalty.community.discoverable));
+    if(nextLoyalty.membership){
+      const directory=await supabase.rpc("vp_community_directory");
+      if(!directory.error)setCommunityMembers((directory.data||[]) as CommunityMember[]);
+    }else setCommunityMembers([]);
     if (!selectedOrg && next.organizations[0])
       setSelectedOrg(next.organizations[0].id);
     setSession(current);
@@ -187,6 +193,10 @@ export default function AccountPage() {
       listener.subscription.unsubscribe();
     };
   }, []);
+  useEffect(()=>{
+    if(typeof location==="undefined")return;
+    if(new URLSearchParams(location.search).get("bereich")==="paesse")setTab("passes");
+  },[]);
   // Process returned SumUp payments whenever a signed-in session becomes available.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -873,6 +883,7 @@ export default function AccountPage() {
                   <div><strong>{money(p.price_cents)}</strong><button disabled={busy} onClick={()=>void buyProduct(p.id)}>Jetzt kaufen</button></div>
                 </article>)}
               </section>
+              {!loyalty.products.length&&<div className="account-empty"><h3>Momentan sind keine Angebote aktiv.</h3></div>}
               <section className="community-card">
                 <div><p className="eyebrow">VOLTA COMMUNITY</p><h3>Dein Clubprofil</h3><p>Du entscheidest selbst, ob dein Name später in Community-Funktionen sichtbar sein darf.</p></div>
                 <form onSubmit={saveCommunity}>
@@ -882,6 +893,7 @@ export default function AccountPage() {
                   <button disabled={busy}>Community-Profil speichern</button>
                 </form>
               </section>
+              {loyalty.membership&&<section className="community-directory"><header><div><p className="eyebrow">VOLTA COMMUNITY</p><h3>Leute, die gern spielen.</h3></div><span>{communityMembers.length} sichtbar</span></header>{communityMembers.length?<div>{communityMembers.map((member,index)=><article key={`${member.display_name}-${index}`}><b>{member.display_name.slice(0,1).toUpperCase()}</b><span><strong>{member.display_name}</strong><small>{member.membership}</small><p>{member.bio||"Bereit für die nächste Runde."}</p></span></article>)}</div>:<p className="community-empty">Noch niemand ist sichtbar. Aktiviere dein Profil – du entscheidest jederzeit selbst.</p>}</section>}
               {loyalty.entitlements.length>0&&<section className="pass-history"><h3>Deine aktiven und bisherigen Pässe</h3>{loyalty.entitlements.map(e=><div key={e.id}><span><strong>{e.product_name}</strong><small>bis {new Intl.DateTimeFormat("de-CH").format(new Date(e.valid_until))}</small></span><b>{e.kind==="multi_pass"?`${e.credits_remaining} / ${e.credits_total} Stunden`:e.status==="active"?"Aktiv":e.status}</b></div>)}</section>}
             </>
           )}

@@ -2,7 +2,7 @@ project_id = "gdgnhxjpsgwdzmhicrbd"
 
 [auth]
 site_url = "https://nuknuk.ch"
-additional_redirect_urls = ["https://nuknuk.ch/konto"]
+additional_redirect_urls = ["https://nuknuk.ch/konto", "https://nuknuk.ch/paesse", "https://nuknuk.ch/paesse?produkt=*"]
 
 [auth.mfa.totp]
 enroll_enabled = true

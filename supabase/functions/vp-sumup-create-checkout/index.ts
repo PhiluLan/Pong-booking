@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { cors, db, json, merchantCode, sumupKey } from "../_shared/sumup.ts";
 import { assertAnnyAvailability, provisionAnnyBooking } from "../_shared/anny.ts";
+import { sendBookingConfirmation } from "../_shared/email.ts";
 
 const siteUrl = (Deno.env.get("SITE_URL") || "https://nuknuk.ch").replace(/\/$/, "");
 
@@ -70,6 +71,7 @@ Deno.serve(async (req: Request) => {
       if (settings.anny_enabled) {
         try { await provisionAnnyBooking(hold.booking_id); } catch { /* The status endpoint retries fulfillment. */ }
       }
+      try { await sendBookingConfirmation(hold.booking_id); } catch { /* Status endpoint retries. */ }
       return json(req, {
         checkout_url: `${siteUrl}/buchen?${statusQuery.toString()}`,
         booking_id: hold.booking_id, reference: hold.reference,
@@ -84,6 +86,7 @@ Deno.serve(async (req: Request) => {
       if (settings.anny_enabled) {
         try { await provisionAnnyBooking(hold.booking_id); } catch { /* The status endpoint retries fulfillment. */ }
       }
+      try { await sendBookingConfirmation(hold.booking_id); } catch { /* Status endpoint retries. */ }
       return json(req, {
         checkout_url: `${siteUrl}/buchen?${statusQuery.toString()}`,
         booking_id: hold.booking_id, reference: hold.reference,

@@ -627,6 +627,10 @@ export default function BookingPage() {
               <p className="entry-note">
                 Gruppenanfragen beantworten wir erst ab 25 Personen.
               </p>
+              <Link className="pass-promo" href="/paesse">
+                <span><small>REGELMÄSSIG BEI VOLTA?</small><strong>Mit dem 10er-Pass günstiger spielen.</strong></span>
+                <b>Pässe entdecken →</b>
+              </Link>
             </section>
           )}
           {mode === "group" && !groupReference && (

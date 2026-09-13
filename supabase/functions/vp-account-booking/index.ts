@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { cors, db, json, merchantCode, sumupKey } from "../_shared/sumup.ts";
 import { assertAnnyAvailability, cancelAnnyBooking, rescheduleAnnyBooking } from "../_shared/anny.ts";
+import { sendLoyaltyConfirmation } from "../_shared/email.ts";
 
 const siteUrl = (Deno.env.get("SITE_URL") || "https://nuknuk.ch").replace(/\/$/, "");
 
@@ -122,6 +123,13 @@ Deno.serve(async (req: Request) => {
     }
 
     if (body.action === "buy_loyalty_product") {
+      const returnPath = body.return_path === "/paesse" ? "/paesse" : "/konto";
+      const { data: settings } = await db.from("vp_settings").select("sumup_enabled,loyalty_payment_mode").eq("id", true).single();
+      if (settings?.loyalty_payment_mode === "disabled") throw new Error("Der Verkauf von Pässen und Mitgliedschaften ist momentan pausiert");
+      if (settings?.loyalty_payment_mode === "test") {
+        const { data: staff } = await db.from("vp_staff_members").select("user_id").eq("user_id", user.id).eq("active", true).maybeSingle();
+        if (!staff) throw new Error("Testkäufe sind nur für freigeschaltete Teamkonten möglich");
+      } else if (!settings?.sumup_enabled) throw new Error("Onlinezahlung ist momentan nicht verfügbar");
       const statusToken = `${crypto.randomUUID()}${crypto.randomUUID()}`;
       const { data, error } = await db.rpc("vp_prepare_loyalty_order", {
         p_user_id: user.id, p_product_id: String(body.product_id || ""), p_status_token: statusToken,
@@ -129,13 +137,17 @@ Deno.serve(async (req: Request) => {
       if (error || !data?.[0]) throw new Error(error?.message || "Produkt konnte nicht bestellt werden");
       const order = data[0];
       const params = new URLSearchParams({ loyalty_order: order.order_id, loyalty_token: statusToken });
-      if (Number(order.amount_cents) === 0) return json(req, { checkout_url: `${siteUrl}/konto?${params}`, paid: true });
-      const { data: settings } = await db.from("vp_settings").select("sumup_enabled").eq("id", true).single();
-      if (!settings?.sumup_enabled) {
+      const returnUrl = `${siteUrl}${returnPath}?${params}`;
+      if (Number(order.amount_cents) === 0) {
+        try { await sendLoyaltyConfirmation(order.order_id); } catch { /* Retried by status checks. */ }
+        return json(req, { checkout_url: returnUrl, paid: true });
+      }
+      if (settings?.loyalty_payment_mode === "test") {
         const checkoutId = `manual-loyalty-${order.order_id}`;
         await db.rpc("vp_attach_loyalty_checkout", { p_order_id: order.order_id, p_checkout_id: checkoutId, p_payload: { mode: "manual" } });
         await db.rpc("vp_reconcile_loyalty_order", { p_checkout_id: checkoutId, p_provider_status: "PAID", p_payload: { mode: "manual" } });
-        return json(req, { checkout_url: `${siteUrl}/konto?${params}`, paid: true });
+        try { await sendLoyaltyConfirmation(order.order_id); } catch { /* Retried by status checks. */ }
+        return json(req, { checkout_url: returnUrl, paid: true });
       }
       const response = await fetch("https://api.sumup.com/v0.1/checkouts", {
         method: "POST",
@@ -145,7 +157,7 @@ Deno.serve(async (req: Request) => {
           amount: Number((Number(order.amount_cents) / 100).toFixed(2)), currency: "CHF",
           merchant_code: merchantCode(), description: "Volta Pong · Pass oder Mitgliedschaft",
           return_url: `${Deno.env.get("SUPABASE_URL")}/functions/v1/vp-sumup-webhook`,
-          redirect_url: `${siteUrl}/konto?${params}`, valid_until: order.expires_at,
+          redirect_url: returnUrl, valid_until: order.expires_at,
           hosted_checkout: { enabled: true },
         }),
       });
@@ -166,6 +178,9 @@ Deno.serve(async (req: Request) => {
         if (response.ok) await db.rpc("vp_reconcile_loyalty_order", { p_checkout_id: row.checkout_id, p_provider_status: checkout.status, p_payload: checkout });
         result = await db.rpc("vp_loyalty_order_result", { p_user_id: user.id, p_order_id: body.order_id, p_status_token: body.status_token });
         row = result.data?.[0] || row;
+      }
+      if (row.status === "paid") {
+        try { await sendLoyaltyConfirmation(String(body.order_id)); } catch { /* The paid entitlement remains authoritative. */ }
       }
       return json(req, row);
     }
