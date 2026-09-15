@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { cors, db, json, merchantCode, sumupKey } from "../_shared/sumup.ts";
 import { assertAnnyAvailability, provisionAnnyBooking } from "../_shared/anny.ts";
-import { sendBookingConfirmation } from "../_shared/email.ts";
+import { sendBookingConfirmation, sendEmailSetupTest } from "../_shared/email.ts";
 
 const siteUrl = (Deno.env.get("SITE_URL") || "https://nuknuk.ch").replace(/\/$/, "");
 
@@ -16,6 +16,17 @@ Deno.serve(async (req: Request) => {
       });
       if (error || !data?.[0]) throw new Error(error?.message || "Dieser Rabattcode ist nicht gültig");
       return json(req, data[0]);
+    }
+    if (body.action === "send_email_test") {
+      const { data: emailSettings, error: emailSettingsError } = await db.rpc(
+        "vp_admin_loyalty_payment_settings",
+        { p_pin: String(body.pin || "") },
+      );
+      if (emailSettingsError || !emailSettings?.email_reply_to) {
+        throw new Error("Testmail konnte nicht autorisiert werden");
+      }
+      await sendEmailSetupTest(String(emailSettings.email_reply_to));
+      return json(req, { ok: true, recipient: emailSettings.email_reply_to });
     }
     const { data: settings, error: settingsError } = await db.from("vp_settings")
       .select("anny_enabled,sumup_enabled").eq("id", true).single();

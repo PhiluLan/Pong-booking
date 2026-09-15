@@ -104,3 +104,17 @@ export async function sendLoyaltyConfirmation(orderId: string) {
     <table role="presentation" width="100%" style="border-collapse:collapse;font-size:14px"><tr><td style="padding:8px 0;color:#6f8297">Produkt</td><td align="right"><strong>${esc(product.name)}</strong></td></tr><tr><td style="padding:8px 0;color:#6f8297">Bezahlt</td><td align="right"><strong>${esc(money(Number(order.amount_cents)))}</strong></td></tr></table>`;
   await deliver(`loyalty-purchase:${order.id}`, "loyalty_purchase", recipient, `Volta Pong · ${product.name} ist aktiv`, shell(`${product.name} wurde aktiviert`, "Mehr Volta für dich.", body, { label: isPass ? "Tisch buchen" : "Community öffnen", href: isPass ? `${siteUrl}/buchen` : `${siteUrl}/konto?bereich=paesse` }), { order_id: order.id, product_id: order.product_id });
 }
+
+export async function sendEmailSetupTest(recipient: string) {
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Zurich" }).format(new Date());
+  const body = `<p style="font-size:17px;line-height:1.55;color:#526a83">Hallo Philipp, diese Nachricht bestätigt den produktiven Versand der neuen Volta-Pong-Plattform.</p>
+    <div style="margin:24px 0;padding:22px;border-radius:16px;background:#14549a;color:#fff;line-height:1.8"><strong style="font-size:21px">Alles verbunden.</strong><br>✓ nuknuk.ch verifiziert<br>✓ Resend aktiviert<br>✓ Supabase Secret aktiv<br>✓ Buchungs- und Passmails bereit</div>`;
+  await deliver(
+    `email-setup-test:${day}`,
+    "booking_confirmation",
+    recipient,
+    "Volta Pong · E-Mail-Versand ist bereit",
+    shell("Der gebrandete Volta-Pong-Mailversand funktioniert.", "E-Mail-Versand funktioniert.", body, { label: "Buchungsportal öffnen", href: siteUrl }),
+    { setup_test: true, date: day },
+  );
+}
